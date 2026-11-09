@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Jelly Match (Puyo Style)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&family=M+PLUS+Rounded+1c:wght@700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Nunito', 'M PLUS Rounded 1c', sans-serif;
+            background: linear-gradient(135deg, #fbc2eb 0%, #a6c1ee 100%);
+            color: #6a4c93;
+            touch-action: none; /* スマホでのスクロールを防止 */
+            overflow: hidden;
+        }
+        
+        #game-container {
+            box-shadow: 0 10px 30px rgba(255, 150, 200, 0.3);
+            border-radius: 20px;
+            background-color: rgba(255, 255, 255, 0.5);
+            backdrop-filter: blur(10px);
+        }
+
+        canvas {
+            border-radius: 12px;
+        }
+
+        .btn-control {
+            background: linear-gradient(145deg, #ffffff, #e6e6e6);
+            box-shadow:  5px 5px 15px rgba(166, 193, 238, 0.5), -5px -5px 15px #ffffff;
+            border-radius: 50%;
+            transition: all 0.1s;
+            color: #ff9ece;
+        }
+        
+        .btn-control:active {
+            box-shadow: inset 5px 5px 10px rgba(166, 193, 238, 0.3), inset -5px -5px 10px #ffffff;
+            transform: scale(0.95);
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255, 255, 255, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            border-radius: 20px;
+        }
+
+        .hidden { display: none !important; }
+
+        /* キラキラ光るテキスト用 */
+        .glow-text {
+            color: #ff9ece;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.9), 0 0 20px #ffb6c1, 0 0 30px #ffb6c1;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col items-center justify-center">
+
+    <!-- ヘッダー / スコアボード -->
+    <div class="w-full max-w-md px-4 flex justify-between items-end mb-2">
+        <div>
+            <div class="text-purple-400 text-sm font-bold tracking-widest">SCORE</div>
+            <div id="score-display" class="text-4xl font-black text-pink-400 font-mono tracking-wider glow-text">0</div>
+        </div>
+        <div class="text-right">
+            <div class="text-purple-400 text-sm font-bold tracking-widest mb-1">NEXT</div>
+            <canvas id="next-canvas" width="60" height="120" class="bg-white/60 rounded-xl shadow-inner border-2 border-pink-200"></canvas>
+        </div>
+    </div>
+
+    <!-- ゲームエリア -->
+    <div id="game-container" class="relative p-3 border-4 border-white">
+        <canvas id="game-canvas" width="240" height="480" class="bg-white/30 shadow-inner"></canvas>
+        
+        <!-- スタート / ゲームオーバー画面 -->
+        <div id="start-screen" class="overlay">
+            <h1 class="text-5xl font-black mb-2 glow-text drop-shadow-sm tracking-wide">Yume Match</h1>
+            <p class="text-md mb-8 text-purple-500 font-bold">４つ以上つなげて消してね♡</p>
+            <button id="start-btn" class="px-8 py-4 bg-gradient-to-r from-pink-300 to-purple-300 rounded-full font-black text-white text-2xl shadow-xl hover:scale-105 active:scale-95 transition-transform border-4 border-white">
+                START ☆
+            </button>
+        </div>
+
+        <div id="gameover-screen" class="overlay hidden">
+            <h1 class="text-4xl font-black mb-4 text-purple-400 glow-text">おしまい！</h1>
+            <div class="text-xl mb-8 font-bold text-purple-500">SCORE: <span id="final-score" class="text-pink-400 text-3xl"></span></div>
+            <button id="restart-btn" class="px-8 py-4 bg-gradient-to-r from-purple-300 to-blue-300 rounded-full font-black text-white text-2xl shadow-xl hover:scale-105 active:scale-95 transition-transform border-4 border-white">
+                もういっかい♪
+            </button>
+        </div>
+    </div>
+
+    <!-- モバイル用コントロール -->
+    <div class="w-full max-w-md mt-8 grid grid-cols-3 gap-4 px-8 select-none">
+        <div class="col-span-1 flex justify-center items-center">
+            <button id="btn-left" class="btn-control w-16 h-16 flex items-center justify-center text-3xl text-blue-300">&#9664;</button>
+        </div>
+        <div class="col-span-1 flex flex-col gap-3 justify-center items-center">
+            <button id="btn-rotate" class="btn-control w-16 h-16 flex items-center justify-center text-4xl text-pink-400">&#10227;</button>
+            <button id="btn-down" class="btn-control w-16 h-16 flex items-center justify-center text-3xl text-purple-300">&#9660;</button>
+        </div>
+        <div class="col-span-1 flex justify-center items-center">
+            <button id="btn-right" class="btn-control w-16 h-16 flex items-center justify-center text-3xl text-blue-300">&#9654;</button>
+        </div>
+    </div>
+    
+    <div class="mt-4 text-purple-400 text-sm font-bold opacity-70">
+        [PC] 矢印キー: いどう / 上キー: かいてん
+    </div>
+
+<script>
+/**
+ * Jelly Match (Puyo Puyo Clone)
+ * Single File Implementation with HTML5 Canvas and Tone.js
+ */
+
+// --- Constants & Config ---
+const COLS = 6;
+const ROWS = 12;
+const CELL_SIZE = 40;
+const COLORS = [
+    '#ff9ece', // Pastel Pink
+    '#a3d8f4', // Pastel Blue
+    '#fdfd96', // Pastel Yellow
+    '#c8b6ff', // Pastel Purple
+    '#baffc9'  // Pastel Green
+];
+const COLOR_NAMES = ['pink', 'blue', 'yellow', 'purple', 'green'];
+
+// Game States
+const STATE_START = 0;
+const STATE_PLAYING = 1;
+const STATE_ANIMATING = 2; // Gravity or Popping
+const STATE_GAMEOVER = 3;
+
+// --- Globals ---
+let canvas, ctx;
+let nextCanvas, nextCtx;
+let board = Array.from({ length: 12 }, () => Array(6).fill(null)); // Initialize empty board (ROWS=12, COLS=6)
+let activePiece = null;
+let nextPieceColors = [];
+let score = 0;
+let gameState = STATE_START;
+let dropCounter = 0;
+let dropInterval = 1000;
+let lastTime = 0;
+let particles = [];
+let popTexts = [];
+let chainCount = 0;
+
+// Audio Synthesizers (Tone.js)
+let synthMove, synthRotate, synthDrop, synthPop;
+let isAudioInitialized = false;
+
+// --- Initialize ---
+window.onload = () => {
+    canvas = document.getElementById('game-canvas');
+    ctx = canvas.getContext('2d');
+    nextCanvas = document.getElementById('next-canvas');
+    nextCtx = nextCanvas.getContext('2d');
+
+    // UI Bindings
+    document.getElementById('start-btn').addEventListener('click', startGame);
+    document.getElementById('restart-btn').addEventListener('click', startGame);
+    
+    // Input Bindings
+    setupInputs();
+
+    // Initial render
+    drawBoard();
+};
+
+function initAudio() {
+    if (isAudioInitialized) return;
+    
+    // Simple synth for UI/Movement
+    synthMove = new Tone.Synth({
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 }
+    }).toDestination();
+    synthMove.volume.value = -10;
+
+    synthRotate = new Tone.Synth({
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.1 }
+    }).toDestination();
+    synthRotate.volume.value = -8;
+
+    synthDrop = new Tone.MembraneSynth().toDestination();
+    synthDrop.volume.value = -5;
+
+    // PolySynth for satisfying pop chords
+    synthPop = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'square' },
+        envelope: { attack: 0.01, decay: 0.3, sustain: 0.2, release: 0.5 }
+    }).toDestination();
+    synthPop.volume.value = -8;
+
+    Tone.start();
+    isAudioInitialized = true;
+}
+
+function playSound(type) {
+    if (!isAudioInitialized || Tone.context.state !== 'running') return;
+    
+    try {
+        switch(type) {
+            case 'move': synthMove.triggerAttackRelease('C5', '32n'); break;
+            case 'rotate': synthRotate.triggerAttackRelease('G5', '16n'); break;
+            case 'drop': synthDrop.triggerAttackRelease('C2', '8n'); break;
+            case 'lock': synthDrop.triggerAttackRelease('G2', '16n'); break;
+        }
+    } catch (e) { console.warn('Audio play error:', e); }
+}
+
+function playPopSound(chain) {
+    if (!isAudioInitialized || Tone.context.state !== 'running') return;
+    try {
+        // 音階を連鎖数に応じて上げる (C major scale approx)
+        const scale = ['C4', 'D4', 'E4', 'G4', 'A4', 'C5', 'D5', 'E5', 'G5', 'A5'];
+        const baseIdx = Math.min(chain, scale.length - 2);
+        
+        synthPop.triggerAttackRelease([scale[baseIdx], scale[baseIdx+1]], '8n');
+    } catch(e) {}
+}
+
+// --- Game Logic ---
+function startGame() {
+    initAudio();
+    document.getElementById('start-screen').classList.add('hidden');
+    document.getElementById('gameover-screen').classList.add('hidden');
+    
+    // Initialize Board (ROWS x COLS, filled with null)
+    board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    score = 0;
+    dropInterval = 1000;
+    chainCount = 0;
+    updateScore();
+    
+    nextPieceColors = [getRandomColor(), getRandomColor()];
+    spawnPiece();
+    
+    gameState = STATE_PLAYING;
+    lastTime = performance.now();
+    requestAnimationFrame(gameLoop);
+}
+
+function getRandomColor() {
+    return Math.floor(Math.random() * COLORS.length);
+}
+
+function spawnPiece() {
+    // Check if spawn point is blocked (Game Over)
+    if (board[0][2] !== null) {
+        gameOver();
+        return;
+    }
+
+    activePiece = {
+        x: 2, y: 0, // Pivot position (Main piece)
+        colorMain: nextPieceColors[0],
+        colorSub: nextPieceColors[1],
+        rotation: 0 // 0: Up, 1: Right, 2: Down, 3: Left (relative to Main)
+    };
+
+    nextPieceColors = [getRandomColor(), getRandomColor()];
+    drawNextPiece();
+    dropCounter = 0;
+}
+
+// Get positions of Main and Sub pieces
+function getPiecePositions(piece) {
+    if (!piece) return [];
+    let subX = piece.x;
+    let subY = piece.y;
+    
+    switch(piece.rotation) {
+        case 0: subY -= 1; break; // Up
+        case 1: subX += 1; break; // Right
+        case 2: subY += 1; break; // Down
+        case 3: subX -= 1; break; // Left
+    }
+    return [
+        { x: piece.x, y: piece.y, color: piece.colorMain, isMain: true },
+        { x: subX, y: subY, color: piece.colorSub, isMain: false }
+    ];
+}
+
+function isValidPosition(x, y) {
+    if (x < 0 || x >= COLS || y >= ROWS) return false;
+    // Allow pieces to be temporarily above the board (y < 0) during spawn/rotation
+    if (y >= 0 && board[y][x] !== null) return false;
+    return true;
+}
+
+function canMove(dx, dy) {
+    if (!activePiece) return false;
+    const pos = getPiecePositions(activePiece);
+    for (let p of pos) {
+        if (!isValidPosition(p.x + dx, p.y + dy)) return false;
+    }
+    return true;
+}
+
+function move(dx, dy) {
+    if (canMove(dx, dy)) {
+        activePiece.x += dx;
+        activePiece.y += dy;
+        if (dx !== 0) playSound('move');
+        return true;
+    }
+    return false;
+}
+
+function rotate() {
+    if (!activePiece) return;
+    const oldRot = activePiece.rotation;
+    const oldX = activePiece.x;
+    
+    // Attempt standard rotation (clockwise)
+    activePiece.rotation = (activePiece.rotation + 1) % 4;
+    
+    // Wall kick check
+    let valid = true;
+    const pos = getPiecePositions(activePiece);
+    for (let p of pos) {
+        if (!isValidPosition(p.x, p.y)) valid = false;
+    }
+
+    if (!valid) {
+        // Try kicking left
+        activePiece.x -= 1;
+        valid = true;
+        for (let p of getPiecePositions(activePiece)) {
+             if (!isValidPosition(p.x, p.y)) valid = false;
+        }
+        
+        if (!valid) {
+            // Try kicking right (from original)
+            activePiece.x = oldX + 1;
+            valid = true;
+            for (let p of getPiecePositions(activePiece)) {
+                 if (!isValidPosition(p.x, p.y)) valid = false;
+            }
+        }
+        
+        if (!valid) {
+            // Revert if all fails
+            activePiece.rotation = oldRot;
+            activePiece.x = oldX;
+            return;
+        }
+    }
+    
+    playSound('rotate');
+}
+
+function hardDrop() {
+    if (gameState !== STATE_PLAYING || !activePiece) return;
+    while(move(0, 1)) {
+        score += 1;
+    }
+    lockPiece();
+    updateScore();
+}
+
+function lockPiece() {
+    playSound('lock');
+    const pos = getPiecePositions(activePiece);
+    for (let p of pos) {
+        if (p.y >= 0) {
+            board[p.y][p.x] = { color: p.color };
+        }
+    }
+    activePiece = null;
+    gameState = STATE_ANIMATING;
+    chainCount = 0;
+    
+    // Start the physics resolution cycle
+    setTimeout(() => resolvePhysics(), 100); 
+}
+
+// 落下処理 (Gravity)
+async function resolvePhysics() {
+    let moved = applyGravity();
+    if (moved) {
+        // Redraw and wait a bit for animation feel
+        drawBoard();
+        setTimeout(() => resolvePhysics(), 150);
+    } else {
+        // Once gravity settles, check for matches
+        let matchFound = await checkMatches();
+        if (matchFound) {
+            // Wait for pop animation, then apply gravity again
+            setTimeout(() => resolvePhysics(), 500); 
+        } else {
+            // Done chaining
+            if (gameState !== STATE_GAMEOVER) {
+                gameState = STATE_PLAYING;
+                spawnPiece();
+            }
+        }
+    }
+}
+
+function applyGravity() {
+    let moved = false;
+    for (let c = 0; c < COLS; c++) {
+        // Bottom up
+        for (let r = ROWS - 2; r >= 0; r--) {
+            if (board[r][c] !== null) {
+                let y = r;
+                // Find lowest empty spot
+                while (y + 1 < ROWS && board[y + 1][c] === null) {
+                    y++;
+                }
+                if (y !== r) {
+                    board[y][c] = board[r][c];
+                    board[r][c] = null;
+                    moved = true;
+                }
+            }
+        }
+    }
+    return moved;
+}
+
+// 消去判定 (BFS)
+async function checkMatches() {
+    let toRemove = [];
+    let visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            if (board[r][c] !== null && !visited[r][c]) {
+                let color = board[r][c].color;
+                let group = [];
+                let queue = [{r, c}];
+                visited[r][c] = true;
+
+                while (queue.length > 0) {
+                    let {r: currR, c: currC} = queue.shift();
+                    group.push({r: currR, c: currC});
+
+                    // Check neighbors
+                    const dirs = [[-1,0], [1,0], [0,-1], [0,1]];
+                    for (let [dr, dc] of dirs) {
+                        let nr = currR + dr, nc = currC + dc;
+                        if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+                            if (!visited[nr][nc] && board[nr][nc] !== null && board[nr][nc].color === color) {
+                                visited[nr][nc] = true;
+                                queue.push({r: nr, c: nc});
+                            }
+                        }
+                    }
+                }
+
+                if (group.length >= 4) {
+                    toRemove.push(...group);
+                }
+            }
+        }
+    }
+
+    if (toRemove.length > 0) {
+        chainCount++;
+        playPopSound(chainCount);
+        
+        // Score calculation: 10 * num * chain multiplier
+        const baseScore = toRemove.length * 10;
+        const multiplier = Math.max(1, Math.pow(2, chainCount - 1)); // 1, 2, 4, 8...
+        const addScore = baseScore * multiplier;
+        score += addScore;
+        updateScore();
+        
+        // Speed up slightly
+        dropInterval = Math.max(200, 1000 - (score / 100));
+
+        // Create particles and pop text
+        let centerX = 0, centerY = 0;
+        for (let p of toRemove) {
+            createParticles(p.c * CELL_SIZE + CELL_SIZE/2, p.r * CELL_SIZE + CELL_SIZE/2, board[p.r][p.c].color);
+            centerX += p.c; centerY += p.r;
+            board[p.r][p.c] = null; // Clear the blocks
+        }
+        
+        centerX = (centerX / toRemove.length) * CELL_SIZE;
+        centerY = (centerY / toRemove.length) * CELL_SIZE;
+        popTexts.push({
+            x: centerX, y: centerY, text: `${chainCount} Rensa♡`,
+            life: 80, maxLife: 80, color: '#ff9ece'
+        });
+
+        return true;
+    }
+    return false;
+}
+
+function updateScore() {
+    document.getElementById('score-display').innerText = score;
+}
+
+function gameOver() {
+    gameState = STATE_GAMEOVER;
+    document.getElementById('gameover-screen').classList.remove('hidden');
+    document.getElementById('final-score').innerText = score;
+}
+
+// --- Input Handling ---
+function setupInputs() {
+    // Keyboard
+    document.addEventListener('keydown', (e) => {
+        if (gameState !== STATE_PLAYING) return;
+        switch(e.key) {
+            case 'ArrowLeft': move(-1, 0); break;
+            case 'ArrowRight': move(1, 0); break;
+            case 'ArrowDown': move(0, 1); score++; updateScore(); break;
+            case 'ArrowUp': 
+            case 'z': case 'Z': case 'x': case 'X':
+                rotate(); break;
+            case ' ': hardDrop(); break;
+        }
+    });
+
+    // Touch / Buttons
+    const btnLeft = document.getElementById('btn-left');
+    const btnRight = document.getElementById('btn-right');
+    const btnDown = document.getElementById('btn-down');
+    const btnRotate = document.getElementById('btn-rotate');
+
+    // For touch repeating
+    let moveInterval;
+    const startMove = (dx, dy) => {
+        if (gameState !== STATE_PLAYING) return;
+        move(dx, dy);
+        clearInterval(moveInterval);
+        moveInterval = setInterval(() => { move(dx, dy); }, 150);
+    };
+    const stopMove = () => { clearInterval(moveInterval); };
+
+    btnLeft.addEventListener('pointerdown', (e) => { e.preventDefault(); startMove(-1, 0); });
+    btnRight.addEventListener('pointerdown', (e) => { e.preventDefault(); startMove(1, 0); });
+    btnDown.addEventListener('pointerdown', (e) => { e.preventDefault(); startMove(0, 1); });
+    
+    window.addEventListener('pointerup', stopMove);
+    window.addEventListener('pointercancel', stopMove);
+
+    btnRotate.addEventListener('pointerdown', (e) => { 
+        e.preventDefault(); 
+        if(gameState === STATE_PLAYING) rotate(); 
+    });
+}
+
+// --- Graphics & Rendering ---
+function gameLoop(time = 0) {
+    const deltaTime = time - lastTime;
+    lastTime = time;
+
+    update(deltaTime);
+    drawBoard();
+
+    requestAnimationFrame(gameLoop);
+}
+
+function update(deltaTime) {
+    // Handle Game logic update
+    if (gameState === STATE_PLAYING) {
+        dropCounter += deltaTime;
+        if (dropCounter > dropInterval) {
+            if (!move(0, 1)) {
+                lockPiece();
+            }
+            dropCounter = 0;
+        }
+    }
+    
+    // Update Particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.2; // gravity
+        p.life--;
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    // Update Pop Texts
+    for (let i = popTexts.length - 1; i >= 0; i--) {
+        popTexts[i].life--;
+        popTexts[i].y -= 0.5; // float up
+        if (popTexts[i].life <= 0) popTexts.splice(i, 1);
+    }
+}
+
+function createParticles(x, y, colorIdx) {
+    const color = COLORS[colorIdx];
+    for (let i = 0; i < 15; i++) {
+        particles.push({
+            x: x, y: y,
+            vx: (Math.random() - 0.5) * 8,
+            vy: (Math.random() - 1) * 8,
+            life: Math.random() * 30 + 20,
+            color: color,
+            size: Math.random() * 6 + 2
+        });
+    }
+}
+
+function drawJellyBlob(ctx, x, y, size, colorIdx) {
+    const color = COLORS[colorIdx];
+    ctx.save();
+    
+    // Gradient for 3D/yummy look
+    const grad = ctx.createRadialGradient(x + size*0.3, y + size*0.3, size*0.1, x + size/2, y + size/2, size);
+    grad.addColorStop(0, '#ffffff'); // highlight
+    grad.addColorStop(0.3, color);
+    grad.addColorStop(1, shadeColor(color, -20));
+
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    // Slightly round rect/circle
+    ctx.arc(x + size/2, y + size/2, size/2 * 0.95, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ほっぺ
+    ctx.fillStyle = 'rgba(255, 100, 150, 0.4)';
+    const cheek = size * 0.12;
+    ctx.beginPath(); ctx.arc(x + size*0.2, y + size*0.5, cheek, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + size*0.8, y + size*0.5, cheek, 0, Math.PI*2); ctx.fill();
+
+    // Eyes to make it cute
+    ctx.fillStyle = '#5d3f6a'; // dark purple eyes instead of black
+    const eyeSize = size * 0.08;
+    ctx.beginPath(); ctx.arc(x + size*0.35, y + size*0.4, eyeSize, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + size*0.65, y + size*0.4, eyeSize, 0, Math.PI*2); ctx.fill();
+    
+    // Eye highlights (sparkles)
+    ctx.fillStyle = 'white';
+    const highlight = size * 0.03;
+    ctx.beginPath(); ctx.arc(x + size*0.35 - 1, y + size*0.4 - 1, highlight, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + size*0.65 - 1, y + size*0.4 - 1, highlight, 0, Math.PI*2); ctx.fill();
+
+    // Star reflection
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.font = `${size*0.3}px Arial`;
+    ctx.fillText('✨', x + size*0.7, y + size*0.25);
+
+    ctx.restore();
+}
+
+function shadeColor(color, percent) {
+    let R = parseInt(color.substring(1,3),16);
+    let G = parseInt(color.substring(3,5),16);
+    let B = parseInt(color.substring(5,7),16);
+    R = parseInt(R * (100 + percent) / 100);
+    G = parseInt(G * (100 + percent) / 100);
+    B = parseInt(B * (100 + percent) / 100);
+    R = (R<255)?R:255; G = (G<255)?G:255; B = (B<255)?B:255;
+    R = Math.round(R); G = Math.round(G); B = Math.round(B);
+    const RR = ((R.toString(16).length==1)?"0"+R.toString(16):R.toString(16));
+    const GG = ((G.toString(16).length==1)?"0"+G.toString(16):G.toString(16));
+    const BB = ((B.toString(16).length==1)?"0"+B.toString(16):B.toString(16));
+    return "#"+RR+GG+BB;
+}
+
+function drawConnections(r, c) {
+    if (board[r][c] === null) return;
+    const color = board[r][c].color;
+    const x = c * CELL_SIZE;
+    const y = r * CELL_SIZE;
+    const s = CELL_SIZE;
+    const bridgeSize = s * 0.5;
+    const offset = (s - bridgeSize) / 2;
+
+    ctx.fillStyle = COLORS[color];
+    
+    // Draw bridge to right
+    if (c + 1 < COLS && board[r][c+1] !== null && board[r][c+1].color === color) {
+        ctx.fillRect(x + s/2, y + offset, s, bridgeSize);
+    }
+    // Draw bridge to bottom
+    if (r + 1 < ROWS && board[r+1][c] !== null && board[r+1][c].color === color) {
+        ctx.fillRect(x + offset, y + s/2, bridgeSize, s);
+    }
+}
+
+function drawBoard() {
+    // Clear Canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw Grid Background (Dotted pastel lines)
+    ctx.strokeStyle = 'rgba(255, 182, 193, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 4]);
+    for (let i = 0; i <= COLS; i++) {
+        ctx.beginPath(); ctx.moveTo(i * CELL_SIZE, 0); ctx.lineTo(i * CELL_SIZE, canvas.height); ctx.stroke();
+    }
+    for (let i = 0; i <= ROWS; i++) {
+        ctx.beginPath(); ctx.moveTo(0, i * CELL_SIZE); ctx.lineTo(canvas.width, i * CELL_SIZE); ctx.stroke();
+    }
+    ctx.setLineDash([]); // reset
+
+    // 1. Draw Connections (Bridges) under the blobs
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            drawConnections(r, c);
+        }
+    }
+
+    // 2. Draw Settled Blocks
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            if (board[r][c]) {
+                drawJellyBlob(ctx, c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, board[r][c].color);
+            }
+        }
+    }
+
+    // 3. Draw Active Piece
+    if (gameState === STATE_PLAYING && activePiece) {
+        const pos = getPiecePositions(activePiece);
+        
+        // draw connection between falling pair
+        ctx.fillStyle = COLORS[pos[0].color];
+        if (pos[0].color === pos[1].color && pos[0].y >= 0 && pos[1].y >= 0) {
+            const bridge = CELL_SIZE * 0.5;
+            const off = (CELL_SIZE - bridge) / 2;
+            if (activePiece.rotation === 1 || activePiece.rotation === 3) { // horizontal
+                const minX = Math.min(pos[0].x, pos[1].x) * CELL_SIZE;
+                ctx.fillRect(minX + CELL_SIZE/2, pos[0].y * CELL_SIZE + off, CELL_SIZE, bridge);
+            } else { // vertical
+                const minY = Math.min(pos[0].y, pos[1].y) * CELL_SIZE;
+                ctx.fillRect(pos[0].x * CELL_SIZE + off, minY + CELL_SIZE/2, bridge, CELL_SIZE);
+            }
+        }
+
+        // draw pieces
+        for (let p of pos) {
+            if (p.y >= 0) { // Don't draw above board completely
+                drawJellyBlob(ctx, p.x * CELL_SIZE, p.y * CELL_SIZE, CELL_SIZE, p.color);
+            }
+        }
+    }
+
+    // 4. Draw Particles
+    for (let p of particles) {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life / 50;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
+
+    // 5. Draw Pop Texts (Chain Count)
+    ctx.font = 'bold 24px "M PLUS Rounded 1c", Nunito';
+    ctx.textAlign = 'center';
+    for (let pt of popTexts) {
+        ctx.fillStyle = pt.color;
+        ctx.globalAlpha = pt.life / pt.maxLife;
+        // Text Outline for visibility
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#ffffff';
+        ctx.strokeText(pt.text, pt.x, pt.y);
+        ctx.fillText(pt.text, pt.x, pt.y);
+    }
+    ctx.globalAlpha = 1.0;
+}
+
+function drawNextPiece() {
+    nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+    // Draw in center
+    const s = 40;
+    const x = (nextCanvas.width - s) / 2;
+    // Next pieces are drawn vertically
+    drawJellyBlob(nextCtx, x, 10, s, nextPieceColors[1]); // sub (top)
+    drawJellyBlob(nextCtx, x, 10 + s, s, nextPieceColors[0]); // main (bottom)
+}
+</script>
+</body>
+</html>
