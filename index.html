@@ -175,6 +175,7 @@ window.onload = () => {
 
     // Initial render
     drawBoard();
+    requestAnimationFrame(gameLoop);
 };
 
 function initAudio() {
@@ -249,7 +250,6 @@ function startGame() {
     
     gameState = STATE_PLAYING;
     lastTime = performance.now();
-    requestAnimationFrame(gameLoop);
 }
 
 function getRandomColor() {
